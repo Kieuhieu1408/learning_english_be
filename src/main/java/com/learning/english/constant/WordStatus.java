@@ -1,4 +1,4 @@
-package com.learning.english.model;
+package com.learning.english.constant;
 
 public enum WordStatus {
     NEW,

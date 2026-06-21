@@ -1,8 +1,10 @@
 package com.learning.english.model;
 
+import com.learning.english.constant.WordStatus;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -10,11 +12,13 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "words")
-public class Word {
+public class Word implements Persistable<UUID> {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Transient
+    private boolean isNew = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -71,13 +75,24 @@ public class Word {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Override
+    public boolean isNew() {
+        return isNew || id == null;
+    }
+
+    @PostLoad
+    @PrePersist
+    void markNotNew() {
+        this.isNew = false;
+    }
+
     public Word() {}
 
     public Word(UUID id, User user, Note note, String text, String translation, String partOfSpeech, String ipa,
                 String exampleContext, String exampleTranslation, WordStatus status, Integer correctStreak,
                 Double difficulty, Integer intervalDays, LocalDate nextReviewAt, Integer failedEssayStreak,
                 Long version, Instant createdAt, Instant updatedAt) {
-        this.id = id;
+        this.id = id != null ? id : UUID.randomUUID();
         this.user = user;
         this.note = note;
         this.text = text;

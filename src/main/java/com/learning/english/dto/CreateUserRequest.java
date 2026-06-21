@@ -1,6 +1,6 @@
 package com.learning.english.dto;
 
-import com.learning.english.model.Role;
+import com.learning.english.constant.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

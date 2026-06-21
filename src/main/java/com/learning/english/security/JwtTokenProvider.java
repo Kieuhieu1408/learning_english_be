@@ -64,7 +64,8 @@ public class JwtTokenProvider {
             Jwts.parser().verifyWith(key).build().parseSignedClaims(authToken);
             return true;
         } catch (JwtException | IllegalArgumentException ex) {
-            // Log warning or exception details if necessary
+            System.err.println("JWT Token validation failed: " + ex.getMessage());
+            ex.printStackTrace();
         }
         return false;
     }

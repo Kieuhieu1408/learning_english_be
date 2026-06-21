@@ -1,19 +1,27 @@
 package com.learning.english.model;
 
 import jakarta.persistence.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "notes")
-public class Note {
+@Getter
+@Setter
+@NoArgsConstructor
+public class Note extends BaseEntity implements Persistable<UUID> {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Transient
+    private boolean isNew = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "topic_id")
@@ -32,18 +40,20 @@ public class Note {
     @Version
     private Long version;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private Instant createdAt;
+    @Override
+    public boolean isNew() {
+        return isNew || id == null;
+    }
 
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private Instant updatedAt;
+    @PostLoad
+    @PrePersist
+    void markNotNew() {
+        this.isNew = false;
+    }
 
-    public Note() {}
-
+    @Builder
     public Note(UUID id, Topic topic, User user, String title, String content, Long version, Instant createdAt, Instant updatedAt) {
-        this.id = id;
+        this.id = id != null ? id : UUID.randomUUID();
         this.topic = topic;
         this.user = user;
         this.title = title;
@@ -51,129 +61,5 @@ public class Note {
         this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public void setId(UUID id) {
-        this.id = id;
-    }
-
-    public Topic getTopic() {
-        return topic;
-    }
-
-    public void setTopic(Topic topic) {
-        this.topic = topic;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
-    }
-
-    public Long getVersion() {
-        return version;
-    }
-
-    public void setVersion(Long version) {
-        this.version = version;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    // Manual Builder
-    public static NoteBuilder builder() {
-        return new NoteBuilder();
-    }
-
-    public static class NoteBuilder {
-        private UUID id;
-        private Topic topic;
-        private User user;
-        private String title;
-        private String content;
-        private Long version;
-        private Instant createdAt;
-        private Instant updatedAt;
-
-        public NoteBuilder id(UUID id) {
-            this.id = id;
-            return this;
-        }
-
-        public NoteBuilder topic(Topic topic) {
-            this.topic = topic;
-            return this;
-        }
-
-        public NoteBuilder user(User user) {
-            this.user = user;
-            return this;
-        }
-
-        public NoteBuilder title(String title) {
-            this.title = title;
-            return this;
-        }
-
-        public NoteBuilder content(String content) {
-            this.content = content;
-            return this;
-        }
-
-        public NoteBuilder version(Long version) {
-            this.version = version;
-            return this;
-        }
-
-        public NoteBuilder createdAt(Instant createdAt) {
-            this.createdAt = createdAt;
-            return this;
-        }
-
-        public NoteBuilder updatedAt(Instant updatedAt) {
-            this.updatedAt = updatedAt;
-            return this;
-        }
-
-        public Note build() {
-            return new Note(id, topic, user, title, content, version, createdAt, updatedAt);
-        }
     }
 }

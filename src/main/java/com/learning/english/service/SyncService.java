@@ -1,5 +1,6 @@
 package com.learning.english.service;
 
+import com.learning.english.constant.WordStatus;
 import com.learning.english.dto.*;
 import com.learning.english.model.*;
 import com.learning.english.repository.*;
@@ -10,7 +11,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -102,42 +102,56 @@ public class SyncService {
 
         // 2. Process Topics
         List<Topic> topicsToSave = new ArrayList<>();
+        Map<UUID, Topic> topicMap = new HashMap<>();
         if (request.topics() != null) {
             for (SyncRequest.TopicDto dto : request.topics()) {
-                Topic topic = topicRepository.findByIdAndUserId(dto.id(), userId)
-                        .orElseGet(() -> {
-                            Topic t = new Topic();
-                            t.setId(dto.id());
-                            t.setUser(user);
-                            return t;
-                        });
+                Topic topic = topicMap.get(dto.id());
+                if (topic == null) {
+                    topic = topicRepository.findById(dto.id())
+                            .orElseGet(() -> {
+                                Topic t = new Topic();
+                                t.setId(dto.id());
+                                return t;
+                            });
+                }
+                topic.setUser(user);
                 topic.setName(dto.name());
                 topicsToSave.add(topic);
+                topicMap.put(topic.getId(), topic);
             }
             topicRepository.saveAll(topicsToSave);
         }
 
         // 3. Process Notes
         List<Note> notesToSave = new ArrayList<>();
+        Map<UUID, Note> noteMap = new HashMap<>();
         if (request.notes() != null) {
             for (SyncRequest.NoteDto dto : request.notes()) {
-                Note note = noteRepository.findByIdAndUserId(dto.id(), userId)
-                        .orElseGet(() -> {
-                            Note n = new Note();
-                            n.setId(dto.id());
-                            n.setUser(user);
-                            return n;
-                        });
+                Note note = noteMap.get(dto.id());
+                if (note == null) {
+                    note = noteRepository.findById(dto.id())
+                            .orElseGet(() -> {
+                                Note n = new Note();
+                                n.setId(dto.id());
+                                return n;
+                            });
+                }
+                note.setUser(user);
                 note.setTitle(dto.title());
                 note.setContent(dto.content());
-                note.setVersion(dto.version());
+                note.setVersion(note.isNew() ? null : dto.version());
                 
                 if (dto.topicId() != null) {
-                    topicRepository.findByIdAndUserId(dto.topicId(), userId).ifPresent(note::setTopic);
+                    Topic topic = topicMap.get(dto.topicId());
+                    if (topic == null) {
+                        topic = topicRepository.findById(dto.topicId()).orElse(null);
+                    }
+                    note.setTopic(topic);
                 } else {
                     note.setTopic(null);
                 }
                 notesToSave.add(note);
+                noteMap.put(note.getId(), note);
             }
             noteRepository.saveAll(notesToSave);
         }
@@ -147,7 +161,7 @@ public class SyncService {
         int newWordCount = 0;
         if (request.words() != null) {
             for (SyncRequest.WordDto dto : request.words()) {
-                Optional<Word> wordOpt = wordRepository.findByIdAndUserId(dto.id(), userId);
+                Optional<Word> wordOpt = wordRepository.findById(dto.id());
                 Word word;
                 if (wordOpt.isPresent()) {
                     word = wordOpt.get();
@@ -157,10 +171,10 @@ public class SyncService {
                 } else {
                     word = new Word();
                     word.setId(dto.id());
-                    word.setUser(user);
                     newWordCount++;
                 }
 
+                word.setUser(user);
                 word.setText(dto.text());
                 word.setTranslation(dto.translation());
                 word.setPartOfSpeech(dto.partOfSpeech());
@@ -173,10 +187,14 @@ public class SyncService {
                 word.setIntervalDays(dto.intervalDays());
                 word.setNextReviewAt(LocalDate.parse(dto.nextReviewAt()));
                 word.setFailedEssayStreak(dto.failedEssayStreak());
-                word.setVersion(dto.version());
+                word.setVersion(word.isNew() ? null : dto.version());
 
                 if (dto.noteId() != null) {
-                    noteRepository.findByIdAndUserId(dto.noteId(), userId).ifPresent(word::setNote);
+                    Note note = noteMap.get(dto.noteId());
+                    if (note == null) {
+                        note = noteRepository.findById(dto.noteId()).orElse(null);
+                    }
+                    word.setNote(note);
                 } else {
                     word.setNote(null);
                 }

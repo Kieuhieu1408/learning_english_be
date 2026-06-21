@@ -1,7 +1,7 @@
 package com.learning.english.config;
 
 import com.learning.english.constant.AppConstants;
-import com.learning.english.model.Role;
+import com.learning.english.constant.Role;
 import com.learning.english.model.User;
 import com.learning.english.model.UserSyncMetadata;
 import com.learning.english.repository.UserRepository;

@@ -28,6 +28,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        UserPrincipal principal = null;
         try {
             String jwt = getJwtFromRequest(request);
 
@@ -41,23 +42,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                if (userDetails instanceof UserPrincipal principal) {
-                    // Modern Java 25 ScopedValue propagation to child execution contexts/Virtual Threads
-                    ScopedValue.where(SecurityContextUtils.CURRENT_USER, principal).run(() -> {
-                        try {
-                            filterChain.doFilter(request, response);
-                        } catch (ServletException | IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-                    return;
+                if (userDetails instanceof UserPrincipal p) {
+                    principal = p;
                 }
             }
         } catch (Exception ex) {
             logger.error("Could not set user authentication in security context", ex);
         }
 
-        filterChain.doFilter(request, response);
+        if (principal != null) {
+            final UserPrincipal finalPrincipal = principal;
+            try {
+                ScopedValue.where(SecurityContextUtils.CURRENT_USER, finalPrincipal).run(() -> {
+                    try {
+                        filterChain.doFilter(request, response);
+                    } catch (ServletException | IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            } catch (RuntimeException e) {
+                if (e.getCause() instanceof ServletException se) {
+                    throw se;
+                } else if (e.getCause() instanceof IOException ioe) {
+                    throw ioe;
+                } else {
+                    throw e;
+                }
+            }
+        } else {
+            filterChain.doFilter(request, response);
+        }
     }
 
     private String getJwtFromRequest(HttpServletRequest request) {

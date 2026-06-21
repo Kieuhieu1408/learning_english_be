@@ -1,5 +1,7 @@
 package com.learning.english;
 
+import com.learning.english.constant.Role;
+import com.learning.english.constant.WordStatus;
 import com.learning.english.model.*;
 import com.learning.english.repository.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 public class Unit1JPATests {
+
+    @Autowired
+    private com.learning.english.service.SyncService syncService;
 
     @Autowired
     private UserRepository userRepository;
@@ -151,5 +156,113 @@ public class Unit1JPATests {
                 return null;
             });
         });
+    }
+
+    @Test
+    public void testManuallyAssignedIdsSync() {
+        UUID manualTopicId = UUID.randomUUID();
+        UUID manualNoteId = UUID.randomUUID();
+        UUID manualWordId = UUID.randomUUID();
+
+        transactionTemplate.execute(status -> {
+            // Save manual Topic
+            Topic topic = Topic.builder()
+                    .id(manualTopicId)
+                    .user(savedUser)
+                    .name("Manual Topic")
+                    .build();
+            Topic savedTopic = topicRepository.save(topic);
+            assertEquals(manualTopicId, savedTopic.getId());
+
+            // Save manual Note
+            Note note = Note.builder()
+                    .id(manualNoteId)
+                    .user(savedUser)
+                    .topic(savedTopic)
+                    .title("Manual Note")
+                    .content("Manual Note Content")
+                    .build();
+            Note savedNote = noteRepository.save(note);
+            assertEquals(manualNoteId, savedNote.getId());
+
+            // Save manual Word
+            Word word = Word.builder()
+                    .id(manualWordId)
+                    .user(savedUser)
+                    .note(savedNote)
+                    .text("manual")
+                    .status(WordStatus.NEW)
+                    .nextReviewAt(LocalDate.now())
+                    .build();
+            Word savedWord = wordRepository.save(word);
+            assertEquals(manualWordId, savedWord.getId());
+
+            return null;
+        });
+
+        // Verify entities can be retrieved with the manual IDs
+        Optional<Topic> retrievedTopic = topicRepository.findById(manualTopicId);
+        assertTrue(retrievedTopic.isPresent());
+        assertEquals("Manual Topic", retrievedTopic.get().getName());
+
+        Optional<Note> retrievedNote = noteRepository.findById(manualNoteId);
+        assertTrue(retrievedNote.isPresent());
+        assertEquals("Manual Note", retrievedNote.get().getTitle());
+
+        Optional<Word> retrievedWord = wordRepository.findById(manualWordId);
+        assertTrue(retrievedWord.isPresent());
+        assertEquals("manual", retrievedWord.get().getText());
+    }
+
+    @Test
+    public void testSyncBatchWithManuallyAssignedIdsAndVersions() {
+        UUID manualTopicId = UUID.randomUUID();
+        UUID manualNoteId = UUID.randomUUID();
+        UUID manualWordId = UUID.randomUUID();
+
+        // 1. Prepare SyncRequest DTOs
+        com.learning.english.dto.SyncRequest.TopicDto topicDto = new com.learning.english.dto.SyncRequest.TopicDto(
+                manualTopicId, "Sync Topic", System.currentTimeMillis(), System.currentTimeMillis()
+        );
+        com.learning.english.dto.SyncRequest.NoteDto noteDto = new com.learning.english.dto.SyncRequest.NoteDto(
+                manualNoteId, manualTopicId, "Sync Note", "Sync Note Content", 1L, System.currentTimeMillis(), System.currentTimeMillis()
+        );
+        com.learning.english.dto.SyncRequest.WordDto wordDto = new com.learning.english.dto.SyncRequest.WordDto(
+                manualWordId, manualNoteId, "sync", "đồng bộ", "Noun", "sɪŋk", "Let's sync.", "Hãy đồng bộ.",
+                "NEW", 0, 2.0, 0, LocalDate.now().toString(), 0, 1L, System.currentTimeMillis(), System.currentTimeMillis()
+        );
+
+        com.learning.english.dto.SyncRequest request = new com.learning.english.dto.SyncRequest(
+                java.util.List.of(topicDto),
+                java.util.List.of(noteDto),
+                java.util.List.of(wordDto),
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of()
+        );
+
+        // 2. Execute syncBatch within ScopedValue binding of user principal
+        com.learning.english.security.UserPrincipal principal = com.learning.english.security.UserPrincipal.create(savedUser);
+
+        ScopedValue.where(com.learning.english.security.SecurityContextUtils.CURRENT_USER, principal).run(() -> {
+            com.learning.english.dto.SyncResponse response = syncService.syncBatch(request, UUID.randomUUID().toString());
+            assertNotNull(response);
+            assertEquals("SUCCESS", response.getStatus());
+        });
+
+        // 3. Verify retrieved records from database have correct fields and values
+        Optional<Topic> retrievedTopic = topicRepository.findById(manualTopicId);
+        assertTrue(retrievedTopic.isPresent());
+        assertEquals("Sync Topic", retrievedTopic.get().getName());
+
+        Optional<Note> retrievedNote = noteRepository.findById(manualNoteId);
+        assertTrue(retrievedNote.isPresent());
+        assertEquals("Sync Note", retrievedNote.get().getTitle());
+        assertNotNull(retrievedNote.get().getVersion());
+
+        Optional<Word> retrievedWord = wordRepository.findById(manualWordId);
+        assertTrue(retrievedWord.isPresent());
+        assertEquals("sync", retrievedWord.get().getText());
+        assertNotNull(retrievedWord.get().getVersion());
     }
 }

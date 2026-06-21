@@ -21,3 +21,7 @@ spring:
           batch_size: 20
         order_inserts: true
         order_updates: true
+
+app:
+  encryption:
+    secret-key: ${APP_ENCRYPTION_KEY:ThisIsA32CharDevSecretKey12345!!}
