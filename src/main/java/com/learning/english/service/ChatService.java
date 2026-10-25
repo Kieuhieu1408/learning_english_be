@@ -356,7 +356,16 @@ public class ChatService {
                         errorMessage = "AI Provider Error (HTTP " + response.statusCode() + "). Vui lòng kiểm tra API key và hạn ngạch tài khoản.";
                     }
                 } catch (Exception e) {
-                    errorMessage = "Lỗi kết nối AI: " + e.getMessage() + ". Vui lòng kiểm tra API key và kết nối mạng.";
+                    String detail = e.getMessage();
+                    if (detail == null || detail.isBlank() || e instanceof java.net.ConnectException) {
+                        if (effectiveBaseUrl.contains("localhost") || effectiveBaseUrl.contains("127.0.0.1")) {
+                            errorMessage = "Không thể kết nối tới cổng 9Router cục bộ (" + effectiveBaseUrl + "). Vui lòng mở AI Settings (góc dưới bên trái) để chọn nhà cung cấp AI (Gemini / DeepSeek / OpenAI) và nhập API key.";
+                        } else {
+                            errorMessage = "Không thể kết nối tới máy chủ AI (" + effectiveProvider + "). Vui lòng kiểm tra API key và kết nối mạng.";
+                        }
+                    } else {
+                        errorMessage = "Lỗi kết nối AI: " + detail + ". Vui lòng kiểm tra API key và kết nối mạng.";
+                    }
                 }
             }
 
@@ -373,18 +382,21 @@ public class ChatService {
 
             String finalAssistantContent = fullReplyBuilder.toString();
             try {
-                chatMessageRepository.findById(assistantMessageId).ifPresent(msg -> {
-                    msg.setContent(finalAssistantContent);
-                    msg.setTokensUsed(Math.max(1, finalAssistantContent.length() / 4));
-                    chatMessageRepository.save(msg);
-                });
-
                 emitter.send(SseEmitter.event()
                         .name("done")
                         .data("[DONE]", MediaType.TEXT_PLAIN));
                 emitter.complete();
             } catch (Exception e) {
                 emitter.completeWithError(e);
+            }
+
+            try {
+                chatMessageRepository.findById(assistantMessageId).ifPresent(msg -> {
+                    msg.setContent(finalAssistantContent);
+                    msg.setTokensUsed(Math.max(1, finalAssistantContent.length() / 4));
+                    chatMessageRepository.save(msg);
+                });
+            } catch (Exception ignored) {
             }
         });
 

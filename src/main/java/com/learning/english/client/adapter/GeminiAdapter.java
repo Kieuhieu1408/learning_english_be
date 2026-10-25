@@ -102,7 +102,11 @@ public class GeminiAdapter implements AIClient {
                     .exampleTranslation(parsedExampleTranslation)
                     .build();
         } catch (Exception e) {
-            throw new RuntimeException("Gemini translation failed: " + e.getMessage(), e);
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("API_KEY_INVALID") || msg.contains("API key not valid")) {
+                throw new IllegalStateException("Gemini API key is invalid or expired. Please configure a valid API key in AI Settings.", e);
+            }
+            throw new RuntimeException("Gemini translation failed: " + msg, e);
         }
     }
 

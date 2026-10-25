@@ -110,6 +110,8 @@ public class AIService {
                     } else {
                         aiResult = openaiAdapter.translateAndDefineWithContext(rawText, inputSentence, userApiKey, model, customBaseUrl);
                     }
+                } else if ("9ROUTER".equalsIgnoreCase(provider)) {
+                    aiResult = openaiAdapter.translateAndDefineWithContext(rawText, inputSentence, null, model, customBaseUrl);
                 }
             } catch (Exception e) {
                 // If user-specific AI call failed, log and fallback to active default AI client
