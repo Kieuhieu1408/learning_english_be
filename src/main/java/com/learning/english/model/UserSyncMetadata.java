@@ -36,22 +36,22 @@ public class UserSyncMetadata extends BaseEntity {
     @Column(name = "client_version", length = 50)
     private String clientVersion;
 
-    @Column(name = "new_count", nullable = false)
+    @Column(name = "new_count", nullable = false, columnDefinition = "integer default 0")
     private Integer newCount = 0;
 
-    @Column(name = "learning_count", nullable = false)
+    @Column(name = "learning_count", nullable = false, columnDefinition = "integer default 0")
     private Integer learningCount = 0;
 
-    @Column(name = "remembered_count", nullable = false)
+    @Column(name = "remembered_count", nullable = false, columnDefinition = "integer default 0")
     private Integer rememberedCount = 0;
 
-    @Column(name = "mastered_count", nullable = false)
+    @Column(name = "mastered_count", nullable = false, columnDefinition = "integer default 0")
     private Integer masteredCount = 0;
 
-    @Column(name = "current_streak_days", nullable = false)
+    @Column(name = "current_streak_days", nullable = false, columnDefinition = "integer default 0")
     private Integer currentStreakDays = 0;
 
-    @Column(name = "longest_streak_days", nullable = false)
+    @Column(name = "longest_streak_days", nullable = false, columnDefinition = "integer default 0")
     private Integer longestStreakDays = 0;
 
     @Column(name = "last_active_date")
