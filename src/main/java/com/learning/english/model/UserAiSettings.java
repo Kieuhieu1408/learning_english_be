@@ -25,27 +25,36 @@ public class UserAiSettings extends BaseEntity {
     private User user;
 
     @Column(name = "provider")
-    private String provider;
+    private String provider = "9ROUTER";
+
+    @Column(name = "custom_base_url", length = 500)
+    private String customBaseUrl = "http://localhost:20128/v1";
 
     @Column(name = "encrypted_api_key", length = 1024)
     private String encryptedApiKey;
 
     @Column(name = "translation_model")
-    private String translationModel;
+    private String translationModel = "deepseek-chat";
 
     @Column(name = "quiz_model")
-    private String quizModel;
+    private String quizModel = "deepseek-chat";
+
+    @Column(name = "chat_model")
+    private String chatModel = "deepseek-chat";
 
     @Builder
-    public UserAiSettings(UUID id, User user, String provider, String encryptedApiKey,
-                          String translationModel, String quizModel,
+    public UserAiSettings(UUID id, User user, String provider, String customBaseUrl,
+                          String encryptedApiKey, String translationModel,
+                          String quizModel, String chatModel,
                           Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.user = user;
-        this.provider = provider;
+        this.provider = provider != null ? provider : "9ROUTER";
+        this.customBaseUrl = customBaseUrl != null ? customBaseUrl : "http://localhost:20128/v1";
         this.encryptedApiKey = encryptedApiKey;
-        this.translationModel = translationModel;
-        this.quizModel = quizModel;
+        this.translationModel = translationModel != null ? translationModel : "deepseek-chat";
+        this.quizModel = quizModel != null ? quizModel : "deepseek-chat";
+        this.chatModel = chatModel != null ? chatModel : "deepseek-chat";
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

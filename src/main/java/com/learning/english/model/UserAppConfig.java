@@ -30,13 +30,35 @@ public class UserAppConfig extends BaseEntity {
     @Column(name = "theme_mode")
     private String themeMode;
 
+    @Column(nullable = false, length = 100)
+    private String timezone = "Asia/Ho_Chi_Minh";
+
+    @Column(name = "daily_target", nullable = false)
+    private Integer dailyTarget = 20;
+
+    @Column(name = "sidebar_width", nullable = false)
+    private Integer sidebarWidth = 244;
+
+    @Column(name = "auto_speak", nullable = false)
+    private Boolean autoSpeak = false;
+
+    @Version
+    private Long version;
+
     @Builder
     public UserAppConfig(UUID id, User user, String themeColor, String themeMode,
+                         String timezone, Integer dailyTarget, Integer sidebarWidth,
+                         Boolean autoSpeak, Long version,
                          Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.user = user;
         this.themeColor = themeColor;
         this.themeMode = themeMode;
+        this.timezone = timezone != null ? timezone : "Asia/Ho_Chi_Minh";
+        this.dailyTarget = dailyTarget != null ? dailyTarget : 20;
+        this.sidebarWidth = sidebarWidth != null ? sidebarWidth : 244;
+        this.autoSpeak = autoSpeak != null ? autoSpeak : false;
+        this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

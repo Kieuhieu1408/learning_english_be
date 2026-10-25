@@ -6,9 +6,11 @@ import java.util.UUID;
 
 public class NoteRequest {
 
-    private UUID id; // Optional, provided when editing
+    private UUID id;
 
-    private UUID topicId; // Optional, null if not classified yet
+    private UUID topicId;
+
+    private Long baseVersion;
 
     @NotBlank(message = "Title cannot be blank")
     private String title;
@@ -20,6 +22,14 @@ public class NoteRequest {
     public NoteRequest(UUID id, UUID topicId, String title, String content) {
         this.id = id;
         this.topicId = topicId;
+        this.title = title;
+        this.content = content;
+    }
+
+    public NoteRequest(UUID id, UUID topicId, Long baseVersion, String title, String content) {
+        this.id = id;
+        this.topicId = topicId;
+        this.baseVersion = baseVersion;
         this.title = title;
         this.content = content;
     }
@@ -38,6 +48,14 @@ public class NoteRequest {
 
     public void setTopicId(UUID topicId) {
         this.topicId = topicId;
+    }
+
+    public Long getBaseVersion() {
+        return baseVersion;
+    }
+
+    public void setBaseVersion(Long baseVersion) {
+        this.baseVersion = baseVersion;
     }
 
     public String getTitle() {

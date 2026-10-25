@@ -1,5 +1,6 @@
 package com.learning.english.model;
 
+import com.learning.english.util.UuidV7Generator;
 import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Getter;
@@ -40,6 +41,9 @@ public class Note extends BaseEntity implements Persistable<UUID> {
     @Version
     private Long version;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @Override
     public boolean isNew() {
         return isNew || id == null;
@@ -52,13 +56,15 @@ public class Note extends BaseEntity implements Persistable<UUID> {
     }
 
     @Builder
-    public Note(UUID id, Topic topic, User user, String title, String content, Long version, Instant createdAt, Instant updatedAt) {
-        this.id = id != null ? id : UUID.randomUUID();
+    public Note(UUID id, Topic topic, User user, String title, String content, Long version,
+                Instant deletedAt, Instant createdAt, Instant updatedAt) {
+        this.id = id != null ? id : UuidV7Generator.generate();
         this.topic = topic;
         this.user = user;
         this.title = title;
         this.content = content;
         this.version = version;
+        this.deletedAt = deletedAt;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

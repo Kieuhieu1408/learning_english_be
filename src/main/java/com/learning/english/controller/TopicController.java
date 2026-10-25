@@ -1,7 +1,7 @@
 package com.learning.english.controller;
 
+import com.learning.english.dto.TopicDto;
 import com.learning.english.dto.TopicRequest;
-import com.learning.english.model.Topic;
 import com.learning.english.service.TopicService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,13 +19,21 @@ public class TopicController {
     private TopicService topicService;
 
     @GetMapping
-    public ResponseEntity<List<Topic>> getAllTopics() {
+    public ResponseEntity<List<TopicDto>> getAllTopics() {
         return ResponseEntity.ok(topicService.getAllTopics());
     }
 
     @PostMapping
-    public ResponseEntity<Topic> createTopic(@Valid @RequestBody TopicRequest request) {
-        return ResponseEntity.ok(topicService.createTopic(request));
+    public ResponseEntity<TopicDto> createTopic(@Valid @RequestBody TopicRequest request) {
+        return ResponseEntity.ok(topicService.createOrUpsertTopic(request));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<TopicDto> updateTopic(
+            @PathVariable UUID id,
+            @Valid @RequestBody TopicRequest request
+    ) {
+        return ResponseEntity.ok(topicService.updateTopic(id, request));
     }
 
     @DeleteMapping("/{id}")

@@ -1,3 +1,6 @@
+server:
+  port: ${PORT:8080}
+
 spring:
   application:
     name: english
@@ -22,6 +25,28 @@ spring:
         order_inserts: true
         order_updates: true
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
 app:
   encryption:
     secret-key: ${APP_ENCRYPTION_KEY:ThisIsA32CharDevSecretKey12345!!}
+  ai:
+    provider: ${APP_AI_PROVIDER:${AI_PROVIDER:gemini}}
+    allowed-base-urls:
+      - "http://localhost:20128/v1"
+      - "https://api.deepseek.com"
+      - "https://generativelanguage.googleapis.com"
+      - "https://api.openai.com"
+  gemini:
+    api-url: ${APP_GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta}
+    api-key: ${GEMINI_API_KEY:${APP_GEMINI_API_KEY:}}
+  openai:
+    api-url: ${APP_OPENAI_API_URL:https://api.openai.com/v1}
+    api-key: ${OPENAI_API_KEY:${DEEPSEEK_API_KEY:${APP_OPENAI_API_KEY:}}}
+

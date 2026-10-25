@@ -1,5 +1,5 @@
-# Business Requirements Document (BRD)
-## English Learning Web Application Backend
+# Business Requirements Document (BRD) - Backend (v2.1 Finalized)
+## English Learning Web Application Backend (Target UI: **margin.**)
 
 ---
 
@@ -7,89 +7,146 @@
 | Version | Date | Author | Description |
 | :--- | :--- | :--- | :--- |
 | 1.0.0 | 2026-06-28 | Antigravity AI | Initial draft capturing core schema, sync workflows, and AI integration requirements. |
+| 1.1.0 | 2026-10-16 | Antigravity AI | Architectural overhaul: User-scoped Multi-Context Vocabulary, Read-First optimization, Paced SRS reviews, and Delta Sync. |
+| 2.0.0 | 2026-10-16 | Antigravity AI | Architecture aligned with `answer.md` Round 1: 45-Word Sliding Window Cache, PostgreSQL Hash Partitioning + HOT Update (`fillfactor=80`), UUIDv7, Async Write Pipeline, and AI Chat Companion via `9Router` SSE Streaming. |
+| 2.1.0 | 2026-10-16 | Antigravity AI | **Contract & Architecture Alignment (Round 2)**: Re-aligned with Frontend Local-First reality. Clarified data ownership (`primary_meaning` vs context `meaning`), Event-Sourcing SRS replay (`eventId`), soft delete tombstones (`deleted_at`), IANA Timezone support, Server-owned Delta Sync (`cursor`), single-name OpenAPI contract, and SSE Chat over HTTP fetch. |
 
 ---
 
 ### 2. Executive Summary
-The **English Learning Web Application** is a specialized platform designed to help users master English vocabulary and contextual writing through structured notes, spaced repetition learning, and customized AI-assisted feedback. 
+The **English Learning Web Application (`margin.`)** is an editorial-grade platform designed to help users master English vocabulary and contextual writing through structured notes, spaced repetition learning (SRS), and an interactive AI Chat Companion.
 
-This document defines the backend business and functional requirements. The backend is designed as a resilient, high-concurrency Spring Boot API that supports client-side offline-first architectures. It facilitates robust batch synchronization with conflict resolution and offloads external AI API calls using lightweight virtual thread pooling for maximum throughput.
+Following the definitive architectural resolutions ([`answer.md`](file:///Users/hieuquockieu/Desktop/workspace/learning%20english/learning_english_be/docs/answer.md) Rounds 1 & 2), the backend is structured around four architectural pillars:
+
+1. **Local-First Alignment with Authoritative Cloud Sync**:
+   - The client application operates with full offline autonomy backed by client-side IndexedDB.
+   - The backend serves as the **authoritative source of truth for conflict resolution, delta synchronization, and cross-device hydration**.
+   - Sync leverages a server-issued monotonic `cursor`, soft-delete tombstones (`deleted_at`), and an event-sourced review log replay pipeline.
+2. **Physical Optimization & Hot-Path Efficiency**:
+   - High-throughput write isolation: `user_words` retains only SRS numeric/date columns plus `primary_meaning` with `fillfactor = 80` to activate **PostgreSQL Heap-Only Tuple (HOT)** in-place updates.
+   - Scalable multi-tenancy: Declarative Hash Partitioning (`PARTITION BY HASH (user_id)`) on `user_words` and `word_contexts` ensures compact B-Tree index pages and eliminates random disk I/O.
+   - Uniform monotonic **UUIDv7** identifiers across all entities (client-generated and server-validated).
+3. **User-Scoped Multi-Context Vocabulary & Unicode Deduplication**:
+   - Lexicon deduplicated per user on `(user_id, text_normalized)` using a shared Unicode normalization specification: `trim -> lowercase -> strip non-letter boundary characters -> collapse inner whitespace`.
+   - Each word maintains a `primary_meaning` for fast card display, alongside multiple contextual instances (`word_contexts`) recording the source sentence, translation, grammatical part of speech, and note snapshot.
+4. **Timezone-Aware SRS Progression & Bento Analytics**:
+   - User-configured IANA timezone (`UserAppConfig.timezone`) guarantees consistent daily boundaries (`study_date`), streak tracking, and `next_review_at` calculations regardless of client UTC offsets.
+   - Spaced repetition adheres to a deterministic 4-stage progression with client event idempotency (`eventId`).
+5. **Unified AI Engine (`9Router` / OpenAI-Compatible / Gemini) with SSE**:
+   - Integrated gateway routing requests to local self-hosted `9Router` (`http://localhost:20128/v1` with 3-tier fallback) or direct LLM providers with strict SSRF URL allow-listing.
+   - Contextual chat companion streaming tokens via Server-Sent Events (`text/event-stream`).
 
 ---
 
-### 3. Project Vision & Core Goals
-- **Personalized Vocabulary Progression**: Utilize an active spaced-repetition algorithm (based on SuperMemo-like parameters) to optimize word retention.
-- **Context-driven Learning**: Allow users to link vocabulary directly to personal study notes or essays, providing direct contextual relevance.
-- **AI-Powered Assistance**: Support dynamic translation, automatic note topic classification, and granular essay evaluation using user-supplied or system-default Gemini/OpenAI credentials.
-- **Offline-First Synchronization**: Allow users to study uninterrupted on client applications, syncing batches of created, updated, or deleted topics, notes, and words seamlessly with the cloud database.
-
----
-
-### 4. User Personas
-1. **Self-Guided Learner (Active Study)**: Focuses on reading articles, writing essays, creating flashcards, and reviewing them based on optimal schedules.
-2. **Intermediate/Advanced Writer**: Uses the essay practice feature to write on custom topics, obtaining immediate scores and grammatical corrections.
-3. **Multi-device Student**: Switches between mobile and web applications, expecting study lists and custom configuration keys to sync seamlessly.
-
----
-
-### 5. Architectural & System Context
-The backend is built with:
-- **Core Technology**: Java 25 (utilizing Project Loom Virtual Threads for parallel I/O blocking tasks) and Spring Boot 4.x.
-- **Data Persistence**: PostgreSQL for production transactional data, with optimized batch writing properties.
-- **Security**: JWT-based stateless authentication and AES-256 encryption for user-owned API keys.
+### 3. System Architecture & Data Flow
 
 ```mermaid
 graph TD
-    Client[Client Mobile/Web App] -->|HTTPS / JWT / Idempotency Key| API[Spring Boot REST API]
-    API -->|JPA / Batch Inserts| DB[(PostgreSQL Database)]
-    API -->|Virtual Threads| AI[AI Service Engine]
-    AI -->|External API Calls| Gemini[Google Gemini API]
-    AI -->|External API Calls| OpenAI[OpenAI API]
+    Client["Client Web App (margin.)<br/>Local-First IndexedDB"] -->|HTTPS / JWT| API[Spring Boot 4 REST & SSE API]
+    
+    subgraph "Core REST & SSE Gateway"
+        API --> AuthCtrl[Auth & Me Controller]
+        API --> VocabCtrl[Vocabulary & Context Controller]
+        API --> ReviewCtrl[SRS Review Controller]
+        API --> SyncCtrl[Delta Sync & Conflict Controller]
+        API --> ChatCtrl[AI Chat SSE Controller]
+    end
+
+    subgraph "Event-Sourced Async Processing"
+        ReviewCtrl -->|Publish ReviewEvents| EventBus[Spring Event Bus / Virtual Threads]
+        EventBus -->|Replay SM-2 & Batch Insert| DB[(PostgreSQL 17<br/>Hash Partitioned by user_id)]
+        Scheduler["@Scheduled Timezone-Aware Job"] -->|Reconcile Streaks & Counters| DB
+    end
+
+    subgraph "Unified AI Engine (SSRF-Protected)"
+        ChatCtrl -->|OpenAI-Compatible SSE| NineRouter["9Router Gateway<br/>(http://localhost:20128/v1)"]
+        VocabCtrl -->|Context Translate| NineRouter
+        NineRouter --> DirectLLM[DeepSeek / Gemini / OpenAI]
+    end
 ```
 
 ---
 
-### 6. Functional Requirements
+### 4. Functional Requirements
 
-#### 6.1. User Management & Authentication
-- **Registration & Login**: Secure registration and password hashing. Issues stateless JWTs.
-- **Role-Based Access Control**: Supports roles such as `USER` and `ADMIN` (via `Role` enum).
-- **Security Context**: Authenticated users have scoped data ownership. All operations enforce tenancy (users can only access, sync, or modify their own resources).
+#### 4.1. Authentication & Bootstrap
+- **Endpoints**: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
+- **Bootstrap Metadata**: `GET /api/auth/me` returns the authenticated user profile, `AppConfigDto` (including `timezone`, `dailyTarget`, `theme`), and `SyncCountersResponse` (`dueCount`, `reviewedToday`, `totalWords`, `streakDays`).
 
-#### 6.2. Topic & Note Management
-- **Topic Hierarchies**: Users organize their learning into Topics (e.g., "Business English", "Toefl Prep").
-- **Rich Text Notes**: Users compose notes/essays under specific Topics.
-- **Auto-Categorization**: An AI endpoint reads notes and auto-recommends matching topics or suggests new ones.
+#### 4.2. Topics & Notes Management
+- **Topic Endpoints**: `GET /api/topics`, `POST /api/topics` (idempotent upsert with client UUIDv7), `PUT /api/topics/{id}`, `DELETE /api/topics/{id}`.
+- **Note Endpoints**: `GET /api/notes`, `GET /api/notes/{id}`, `POST /api/notes`, `PUT /api/notes/{id}`, `DELETE /api/notes/{id}`.
+- **Cascade Soft-Delete & Snapshot Preservation**:
+  - Deleting a Topic soft-deletes the topic (`deleted_at = now()`) and cascade soft-deletes all contained Notes.
+  - Deleting a Note preserves all harvested vocabulary contexts: sets `note_id = NULL` on associated `word_contexts` while retaining `note_title_snapshot` and context sentences.
 
-#### 6.3. Spaced Repetition Vocabulary Engine
-- **Word Properties**: Text, IPA notation, Part of Speech, Translation, Contextual Example Sentence, and Example Translation.
-- **Learning States**: Words progress through states: `NEW` $\rightarrow$ `LEARNING` $\rightarrow$ `TEMP_REMEMBERED` $\rightarrow$ `MASTERED`.
-- **Review Schedule**: Tracks correct streaks, difficulty scores, and calculate the next review date using a Spaced Repetition Algorithm.
-- **Linkage**: Vocabulary words can belong to a parent Note, capturing the article or text context from which they were harvested.
+#### 4.3. Multi-Context Vocabulary Engine (`UserWord` & `WordContext`)
+- **Deduplication Rule**: Enforced per user on `(user_id, text_normalized)` where `text_normalized` is computed by the standard Unicode normalization algorithm.
+- **Capturing Word Context (`POST /api/words/context`)**:
+  - If word does not exist: Creates `UserWord` (`primary_meaning`, `status = NEW`, `correctStreak = 0`, `nextReviewAt = today`) and appends initial `WordContext`.
+  - If word already exists: Appends new `WordContext` (`sentence`, `sentenceTranslation`, `meaning`, `partOfSpeech`, `noteId`, `noteTitleSnapshot`) to existing word. **SRS progress remains 100% untouched.**
+- **Automatic Multi-Device Deduplication**: When syncing a word whose normalized text already exists under a different UUID, the server automatically merges contexts into the canonical server record and returns an `idRemap` dictionary (`clientId -> canonicalServerId`).
 
-#### 6.4. Client-Server Synchronization Engine
-To support offline productivity, the backend implements a batch sync protocol:
-- **State Merging**: The client submits a single payload (`SyncRequest`) containing arrays of newly added/modified topics, notes, and words, along with lists of deleted entity IDs.
-- **Conflict Resolution**: Enforces a version-based conflict check (`dto.version() < entity.getVersion()`). If a client tries to overwrite a newer server record, the server safely ignores the outdated request.
-- **Idempotency Protection**: Enforces an idempotency filter using the `X-Idempotency-Key` header. If a duplicate request is received within a 300-second window, the server returns the cached response rather than repeating DB mutations.
-- **Metadata Audits**: The system tracks user metrics including `dailyWordCount` and `totalWordCount` to maintain dashboard counters on sync completion.
+#### 4.4. Spaced Repetition (SRS) Engine & Event-Sourced Review
+- **4-Stage Status Progression**:
+  1. `NEW`: Newly harvested word, `correctStreak = 0`, zero review logs.
+  2. `LEARNING`: Actively learning or recently forgotten (`correctStreak` in `0..1`, reviewed at least once).
+  3. `TEMP_REMEMBERED`: Short-term retention achieved (`correctStreak` in `2..4`).
+  4. `MASTERED`: Long-term mastery achieved (`correctStreak >= 5` AND `intervalDays >= 14`).
+- **Interval Progression Formula**:
+  - `Interval[1] = 1 day`, `Interval[2] = 3 days`, `Interval[3] = 7 days`, `Interval[4] = 14 days`, `Interval[n >= 5] = round(Interval[n-1] * easeFactor)`.
+  - Ease factor (`easeFactor`, default `2.5`, minimum `1.3`): Decreases by `0.2` on forgotten ratings (`quality < 3`); retains or adjusts on correct ratings.
+- **Event-Sourced Review Submission (`POST /api/review/submit`)**:
+  - Accepts an array of review events: `{ events: [{ eventId, wordId, quality, isCorrect, mode, reviewedAt }] }`.
+  - Idempotent processing: Duplicate `eventId` records are safely ignored.
+  - Server immediately calculates new authoritative SRS values in-memory, publishes async events for database ingestion, and responds with `200 OK` containing the updated word states.
+- **Due Retrieval (`GET /api/review/due?limit=15&excludeIds=...`)**:
+  - Queries active due words ordered by `(user_id, next_review_at ASC, status ASC)`.
+  - Excludes currently active session cards via `excludeIds` to prevent skipping or repeating cards.
+- **AI Synonym & Typo Diagnosis (`POST /api/review/check-answer`)**:
+  - Online auxiliary endpoint: When client input fails exact match, queries AI to diagnose whether the submitted term is a valid contextual synonym (`SYNONYM_SUGGESTION`) before grading.
 
-#### 6.5. User-Controlled AI Service Engine
-- **Dual Providers**: Supports Google Gemini and OpenAI as translation and assessment adapters.
-- **Flexible Models**: Users can configure which translation and quiz models are used.
-- **Self-Provided Keys**: To minimize host operational costs, users can store their own Gemini/OpenAI API keys in `UserAiSettings`, stored encrypted via AES-256.
-- **High-Throughput Parallelism**: During bulk translation requests, the system spawns Virtual Threads to run parallel network requests to Gemini/OpenAI, maintaining high throughput under peak loads.
+#### 4.5. Progress, Streak & 35-Day Dashboard (`GET /api/progress/dashboard`)
+- **Timezone-Aware Calculations**: All daily buckets (`study_date`), streak checks, and review counts are calculated relative to the user's configured IANA timezone (`UserAppConfig.timezone`).
+- **Streak Qualification**: A day is credited toward `streakDays` when the user **reviews >= 1 card OR harvests >= 1 new word** within that timezone date.
+- **Dashboard Response Fields (Standardized Single-Contract)**:
+  - `accuracyPercent`: Recall accuracy percentage over the past 30 days (`0..100` or `null`).
+  - `reviewedToday`: Cards reviewed today.
+  - `dailyTarget`: Daily card review target (default `20`).
+  - `wordsAddedToday`: New words collected today.
+  - `totalWords`: Total personal vocabulary count.
+  - `streakDays`: Current consecutive study streak.
+  - `longestStreakDays`: All-time longest study streak.
+  - `distribution`: `{ new, learning, remembered, mastered }`.
+  - `activityCalendar`: Array of exactly 35 daily tiles (`[{ date, count, wordsAdded, filled, isToday }]`).
+
+#### 4.6. Delta Sync Protocol & Conflict Resolution (`POST /api/sync/delta`)
+- **Push & Pull Protocol**:
+  - Request: `{ cursor, changes: { topics, notes, words, wordContexts, reviewEvents }, deleted: { topicIds, noteIds, wordIds, contextIds } }`.
+  - Response: `{ newCursor, changes: { topics, notes, words, wordContexts }, tombstones, idRemap, conflicts, counters }`.
+  - `cursor`: Monotonic server-issued timestamp string ensuring safe synchronization without client clock dependence.
+- **Soft Delete Tombstones**: Soft-deleted entities (`deleted_at IS NOT NULL`) are propagated as tombstones in delta responses, allowing all user devices to purge local records cleanly.
+- **Note Conflict Resolution**:
+  - Detected when a client pushes a note update with `baseVersion < serverVersion` and divergent text content.
+  - Returned in the sync response as a `ConflictItem` containing local and cloud snapshots.
+  - Resolved via `POST /api/sync/resolve-conflict` with explicit user intent (`KEEP_LOCAL` or `APPLY_CLOUD`).
+
+#### 4.7. AI Chat Companion & `9Router` Integration
+- **Server-Persisted Chat**: Conversations and messages are persisted in PostgreSQL (`conversations`, `chat_messages`).
+- **Client-Generated IDs**: Clients generate UUIDv7 identifiers for new conversations to allow idempotent thread creation.
+- **Streaming Protocol (`POST /api/chat/send`)**:
+  - Implemented over HTTP `POST` using **Server-Sent Events (`text/event-stream`)** compatible with standard `fetch` + `ReadableStream`.
+  - Events stream tokens incrementally: `event: meta` -> `event: chunk` -> `event: done` (or `event: error`).
+  - Server automatically loads conversation history from PostgreSQL and appends referenced note/word contexts into the system prompt.
 
 ---
 
-### 7. Entity Relationship Diagram (ERD)
-
-The relational schema is configured as follows:
+### 5. Database Schema & Physical Optimization Design (ERD)
 
 ```mermaid
 erDiagram
     USERS {
-        uuid id PK
+        uuid id PK "UUIDv7"
         varchar username UK
         varchar password
         varchar email UK
@@ -99,104 +156,158 @@ erDiagram
         timestamp updated_at
     }
     TOPICS {
-        uuid id PK
+        uuid id PK "UUIDv7"
         uuid user_id FK
         varchar name
+        timestamp deleted_at "Soft delete tombstone"
         timestamp created_at
         timestamp updated_at
     }
     NOTES {
-        uuid id PK
-        uuid topic_id FK "nullable"
+        uuid id PK "UUIDv7"
         uuid user_id FK
+        uuid topic_id FK "nullable"
         varchar title
         text content
-        bigint version
+        bigint version "Server-owned JPA @Version"
+        timestamp deleted_at "Soft delete tombstone"
         timestamp created_at
         timestamp updated_at
     }
-    WORDS {
-        uuid id PK
-        uuid user_id FK
-        uuid note_id FK "nullable"
-        varchar text
-        text translation
-        varchar part_of_speech
+    USER_WORDS {
+        uuid user_id PK,FK "Partition Key (HASH)"
+        uuid id PK "UUIDv7"
+        varchar text "Display text"
+        varchar text_normalized "Unicode normalized - UK per user"
+        varchar primary_meaning "Canonical definition for flashcards"
         varchar ipa
-        text example_context
-        text example_translation
-        varchar status
+        varchar status "NEW | LEARNING | TEMP_REMEMBERED | MASTERED"
         int correct_streak
-        double difficulty
+        double ease_factor "Default 2.5, min 1.3"
         int interval_days
-        date next_review_at
+        date next_review_at "User timezone date"
         int failed_essay_streak
         bigint version
+        timestamp deleted_at "Soft delete tombstone"
         timestamp created_at
         timestamp updated_at
+    }
+    WORD_CONTEXTS {
+        uuid user_id PK,FK "Partition Key (HASH)"
+        uuid id PK "UUIDv7"
+        uuid user_word_id FK
+        uuid note_id FK "nullable (ON DELETE SET NULL)"
+        varchar note_title_snapshot "Preserved if Note deleted"
+        varchar part_of_speech
+        varchar meaning "Contextual definition"
+        text sentence "Context sentence"
+        text sentence_translation "Vietnamese translation of sentence"
+        timestamp deleted_at "Soft delete tombstone"
+        timestamp created_at
+        timestamp updated_at
+    }
+    REVIEW_LOGS {
+        uuid id PK "UUIDv7"
+        uuid event_id UK "Client-generated UUIDv7 for idempotency"
+        uuid user_id FK
+        uuid user_word_id FK
+        int quality "1 to 5"
+        boolean is_correct
+        varchar mode "FLASHCARD | FILL_BLANK"
+        timestamp reviewed_at
+    }
+    USER_DAILY_STATS {
+        uuid id PK "UUIDv7"
+        uuid user_id FK "UK(user_id, study_date)"
+        date study_date "User timezone date"
+        int words_harvested
+        int cards_reviewed
+        int correct_count
+        int incorrect_count
+        timestamp updated_at
+    }
+    CONVERSATIONS {
+        uuid id PK "UUIDv7"
+        uuid user_id FK
+        uuid note_id FK "nullable context note"
+        varchar title
+        timestamp deleted_at "Soft delete tombstone"
+        timestamp created_at
+        timestamp updated_at
+    }
+    CHAT_MESSAGES {
+        uuid id PK "UUIDv7"
+        uuid conversation_id FK
+        varchar role "user | assistant | system"
+        text content
+        timestamp created_at
     }
     USER_AI_SETTINGS {
         uuid id PK
         uuid user_id FK "unique"
-        varchar provider
-        varchar encrypted_api_key
+        varchar provider "9ROUTER | DEEPSEEK | GOOGLE | OPENAI"
+        varchar custom_base_url "SSRF allow-listed URL"
+        varchar encrypted_api_key "AES-256 encrypted at rest"
         varchar translation_model
         varchar quiz_model
+        varchar chat_model
         timestamp created_at
+        timestamp updated_at
+    }
+    USER_APP_CONFIG {
+        uuid id PK
+        uuid user_id FK "unique"
+        varchar timezone "IANA timezone e.g. Asia/Ho_Chi_Minh"
+        int daily_target "Default 20"
+        varchar theme "Default light"
+        int sidebar_width "Default 244"
         timestamp updated_at
     }
     USER_SYNC_METADATA {
         uuid id PK
         uuid user_id FK "unique"
-        int daily_word_count
         int total_word_count
-        bigint version
-        timestamp created_at
+        int new_count
+        int learning_count
+        int remembered_count
+        int mastered_count
+        int current_streak_days
+        int longest_streak_days
+        date last_active_date
         timestamp updated_at
     }
 
     USERS ||--o{ TOPICS : owns
     USERS ||--o{ NOTES : owns
-    USERS ||--o{ WORDS : owns
+    USERS ||--o{ USER_WORDS : owns
+    USERS ||--o{ REVIEW_LOGS : logs
+    USERS ||--o{ USER_DAILY_STATS : aggregates
+    USERS ||--o{ CONVERSATIONS : chats
     USERS ||--|| USER_AI_SETTINGS : configures
+    USERS ||--|| USER_APP_CONFIG : preferences
     USERS ||--|| USER_SYNC_METADATA : tracks
-    TOPICS ||--o{ NOTES : categorizes
-    NOTES ||--o{ WORDS : context_for
+    TOPICS ||--o{ NOTES : contains
+    USER_WORDS ||--o{ WORD_CONTEXTS : has_contexts
+    NOTES ||--o{ WORD_CONTEXTS : origin_of
+    CONVERSATIONS ||--o{ CHAT_MESSAGES : contains
 ```
 
 ---
 
-### 8. Detailed API Map
+### 6. Storage Internals & Physical Tuning
 
-| Group | Method | Endpoint | Description | Payload/Params |
-| :--- | :--- | :--- | :--- | :--- |
-| **Auth** | `POST` | `/api/auth/register` | Register new user account. | `RegisterRequest` |
-| **Auth** | `POST` | `/api/auth/login` | Log in and retrieve JWT token. | `LoginRequest` |
-| **Sync** | `GET` | `/api/sync/counters` | Get user word count statistics and last sync date. | *None* |
-| **Sync** | `POST` | `/api/sync/batch` | Synchronize offline changes. Enforces `X-Idempotency-Key`. | `SyncRequest` |
-| **AI** | `POST` | `/api/ai/translate` | Bulk translate/define English words in parallel. | `List<String>` |
-| **AI Settings**| `GET` | `/api/ai-settings` | Fetch user-specific API keys and model configurations. | *None* |
-| **AI Settings**| `PUT` | `/api/ai-settings` | Store or update user-specific AI model details/keys. | `AiSettingsDto` |
-
----
-
-### 9. Non-Functional Requirements (NFRs)
-
-#### 9.1. Performance & Concurrency
-- **Concurrency Support**: Scalable processing of blocking external network requests (OpenAI/Gemini) through JDK 25 Virtual Threads, preventing pool exhaustion on standard platform threads.
-- **Database Optimizations**: Leverages Hibernate batch processing settings (`spring.jpa.properties.hibernate.jdbc.batch_size: 20`) for bulk sync requests to guarantee minimal database round-trips.
-
-#### 9.2. Security & Compliance
-- **API Key Security**: Users' personal API keys must not be stored in plaintext. They are encrypted at rest using AES-256 before being stored in the database.
-- **Multi-Tenancy Isolation**: The application enforces tenancy checking during sync and database updates. All queries are verified against the token-extracted user ID to prevent unauthorized cross-tenant data leaks.
-
-#### 9.3. Reliability & Fallbacks
-- **Idempotency**: API endpoints for synchronization are protected by idempotency layers to handle shaky network connections safely without causing database duplication.
-- **AI Fault Tolerance**: Bulk word translation uses concurrent futures. A single failed word translation within a list must be handled gracefully without failing the entire batch translation where possible.
-
----
-
-### 10. Future Enhancements & Roadmap
-1. **Interactive Quiz Generator**: Dynamically generate quizzes based on vocabulary stored in the database.
-2. **Offline Audio Sync**: Allow users to save audio pronunciations locally on clients and sync pronunciation stats.
-3. **Advanced Writing Feedback**: Enhance the essay assessment framework to pinpoint syntax errors and provide interactive re-write recommendations.
+1. **Declarative Hash Partitioning**:
+   - `user_words` and `word_contexts` are partitioned by `HASH (user_id)` across 16 partitions (`user_words_p0` .. `user_words_p15`).
+2. **PostgreSQL HOT Updates (`fillfactor = 80`)**:
+   - `ALTER TABLE user_words SET (fillfactor = 80);`
+   - Heavy textual context lives in `word_contexts`. Daily SRS updates only mutate fixed numeric/date columns on `user_words`, staying on the same 8KB disk page.
+3. **Monotonic UUIDv7**:
+   - All primary keys generate monotonic sequential UUIDv7 values to append sequentially onto B-Tree leaf pages without index fragmentation.
+4. **Composite Indexes**:
+   - `idx_user_words_due`: `(user_id, next_review_at ASC, status ASC) WHERE deleted_at IS NULL`
+   - `idx_user_words_lookup`: `UNIQUE (user_id, text_normalized) WHERE deleted_at IS NULL`
+   - `idx_user_words_updated`: `(user_id, updated_at DESC)`
+   - `idx_word_contexts_word`: `(user_id, user_word_id) WHERE deleted_at IS NULL`
+   - `idx_review_logs_event`: `UNIQUE (event_id)`
+   - `idx_daily_stats_user_date`: `UNIQUE (user_id, study_date DESC)`
+   - `idx_notes_sync`: `(user_id, updated_at DESC)`

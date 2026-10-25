@@ -11,12 +11,16 @@ public class RegisterRequest {
     private String username;
 
     @NotBlank(message = "Password cannot be blank")
-    @Size(min = 6, max = 100, message = "Password must be at least 6 characters")
+    @Size(max = 100, message = "Password must not exceed 100 characters")
     private String password;
 
     @NotBlank(message = "Email cannot be blank")
     @Email(message = "Email must be valid")
     private String email;
+
+    private String name;
+
+    private String timezone;
 
     public RegisterRequest() {}
 
@@ -24,6 +28,14 @@ public class RegisterRequest {
         this.username = username;
         this.password = password;
         this.email = email;
+    }
+
+    public RegisterRequest(String username, String password, String email, String name, String timezone) {
+        this.username = username;
+        this.password = password;
+        this.email = email;
+        this.name = name;
+        this.timezone = timezone;
     }
 
     public String getUsername() {
@@ -48,5 +60,21 @@ public class RegisterRequest {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
     }
 }

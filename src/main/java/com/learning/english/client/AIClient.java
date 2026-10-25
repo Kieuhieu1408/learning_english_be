@@ -11,6 +11,11 @@ public interface AIClient {
     AIResult translateAndDefine(String text);
 
     /**
+     * Translates a vocabulary word within an explicit sentence context.
+     */
+    AIResult translateAndDefineWithContext(String text, String sentence);
+
+    /**
      * Classifies a note content into one of the existing topics, 
      * or suggests a new topic name if none match.
      */

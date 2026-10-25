@@ -13,7 +13,7 @@ public class CreateUserRequest {
     private String username;
 
     @NotBlank(message = "Password cannot be blank")
-    @Size(min = 6, max = 100, message = "Password must be at least 6 characters")
+    @Size(max = 100, message = "Password must not exceed 100 characters")
     private String password;
 
     @NotBlank(message = "Email cannot be blank")

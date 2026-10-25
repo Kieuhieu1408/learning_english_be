@@ -4,6 +4,7 @@ import com.learning.english.model.Topic;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +12,11 @@ import java.util.UUID;
 @Repository
 public interface TopicRepository extends JpaRepository<Topic, UUID> {
     List<Topic> findAllByUserId(UUID userId);
+    List<Topic> findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(UUID userId);
     Optional<Topic> findByIdAndUserId(UUID id, UUID userId);
+    Optional<Topic> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
     boolean existsByNameAndUserId(String name, UUID userId);
+    boolean existsByNameAndUserIdAndDeletedAtIsNull(String name, UUID userId);
+    List<Topic> findAllByUserIdAndUpdatedAtAfterAndDeletedAtIsNull(UUID userId, Instant cursor);
+    List<Topic> findAllByUserIdAndDeletedAtAfter(UUID userId, Instant cursor);
 }

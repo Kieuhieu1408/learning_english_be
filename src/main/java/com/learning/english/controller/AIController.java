@@ -1,7 +1,10 @@
 package com.learning.english.controller;
 
 import com.learning.english.client.dto.AIResult;
+import com.learning.english.dto.TranslateContextRequest;
+import com.learning.english.dto.TranslateContextResponse;
 import com.learning.english.service.AIService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,5 +26,10 @@ public class AIController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    @PostMapping("/translate-context")
+    public ResponseEntity<TranslateContextResponse> translateContext(@Valid @RequestBody TranslateContextRequest request) {
+        return ResponseEntity.ok(aiService.translateContext(request));
     }
 }

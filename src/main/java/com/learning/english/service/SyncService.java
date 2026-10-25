@@ -47,6 +47,15 @@ public class SyncService {
         throw new IllegalStateException("User not authenticated");
     }
 
+    @Autowired
+    private UserWordRepository userWordRepository;
+
+    @Autowired
+    private DailyStatsRepository dailyStatsRepository;
+
+    @Autowired
+    private WordService wordService;
+
     private User getCurrentUserEntity() {
         return userRepository.findById(getCurrentUserPrincipal().getId()).orElseThrow();
     }
@@ -56,11 +65,26 @@ public class SyncService {
         UUID userId = getCurrentUserPrincipal().getId();
         UserSyncMetadata metadata = metadataRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User sync metadata not found"));
-        
+
+        var zoneId = wordService.getUserZoneId(userId);
+        var today = com.learning.english.util.TimezoneUtil.today(zoneId);
+        var dueCutoff = com.learning.english.util.TimezoneUtil.endOfDayInstant(today, zoneId);
+
+        int dueCount = (int) userWordRepository.countDueWords(userId, dueCutoff);
+        int totalWords = (int) userWordRepository.countByUserIdAndDeletedAtIsNull(userId);
+        int reviewedToday = dailyStatsRepository.findByUserIdAndStudyDate(userId, today)
+                .map(d -> d.getWordsReviewed() != null ? d.getWordsReviewed() : 0)
+                .orElse(0);
+        int streakDays = metadata.getCurrentStreakDays() != null ? metadata.getCurrentStreakDays() : 0;
+
         return SyncCountersResponse.builder()
+                .dueCount(dueCount)
+                .reviewedToday(reviewedToday)
+                .totalWords(totalWords > 0 ? totalWords : metadata.getTotalWordCount())
+                .streakDays(streakDays)
                 .dailyWordCount(metadata.getDailyWordCount())
-                .totalWordCount(metadata.getTotalWordCount())
-                .lastSyncAt(metadata.getUpdatedAt())
+                .totalWordCount(totalWords > 0 ? totalWords : metadata.getTotalWordCount())
+                .lastSyncAt(metadata.getLastSyncedAt() != null ? metadata.getLastSyncedAt() : metadata.getUpdatedAt())
                 .build();
     }
 

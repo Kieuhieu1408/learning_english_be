@@ -42,6 +42,21 @@ public class Unit1JPATests {
     private UserSyncMetadataRepository metadataRepository;
 
     @Autowired
+    private UserAppConfigRepository appConfigRepository;
+
+    @Autowired
+    private WordContextRepository wordContextRepository;
+
+    @Autowired
+    private UserWordRepository userWordRepository;
+
+    @Autowired
+    private ReviewLogRepository reviewLogRepository;
+
+    @Autowired
+    private DailyStatsRepository dailyStatsRepository;
+
+    @Autowired
     private TransactionTemplate transactionTemplate;
 
     @Autowired
@@ -52,9 +67,14 @@ public class Unit1JPATests {
     @BeforeEach
     public void setUp() {
         transactionTemplate.execute(status -> {
+            reviewLogRepository.deleteAll();
+            wordContextRepository.deleteAll();
+            userWordRepository.deleteAll();
+            dailyStatsRepository.deleteAll();
             wordRepository.deleteAll();
             noteRepository.deleteAll();
             topicRepository.deleteAll();
+            appConfigRepository.deleteAll();
             metadataRepository.deleteAll();
             userRepository.deleteAll();
 
