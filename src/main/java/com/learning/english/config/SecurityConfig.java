@@ -1,6 +1,7 @@
 package com.learning.english.config;
 
 import com.learning.english.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,6 +28,12 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Value("${app.cors.allowed-origins:https://www.mylearningeng.me,https://mylearningeng.me,http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000}")
+    private List<String> allowedOrigins;
+
+    @Value("${app.cors.allowed-origin-patterns:https://*.mylearningeng.me,https://*.vercel.app}")
+    private List<String> allowedOriginPatterns;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
     }
@@ -40,7 +47,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
-                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
+                .requestMatchers("/swagger-ui/**", "/swagger-ui.html").hasRole("ADMIN")
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
@@ -75,13 +83,6 @@ public class SecurityConfig {
                 if ("user 2".equals(raw) && bcrypt.matches("user2", encodedPassword)) {
                     return true;
                 }
-                // Allow "user1", "User1", "user 1" interchangeably for User1
-                if ("user1".equalsIgnoreCase(raw) && (bcrypt.matches("user1", encodedPassword) || bcrypt.matches("User1", encodedPassword))) {
-                    return true;
-                }
-                if ("user 1".equalsIgnoreCase(raw) && (bcrypt.matches("user1", encodedPassword) || bcrypt.matches("User1", encodedPassword))) {
-                    return true;
-                }
                 return false;
             }
         };
@@ -95,10 +96,27 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        if (allowedOrigins != null && !allowedOrigins.isEmpty()) {
+            List<String> cleanOrigins = allowedOrigins.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .map(s -> s.replaceAll("^[\"']+|[\"']+$", ""))
+                    .filter(s -> !s.isBlank())
+                    .toList();
+            configuration.setAllowedOrigins(cleanOrigins);
+        }
+        if (allowedOriginPatterns != null && !allowedOriginPatterns.isEmpty()) {
+            List<String> cleanPatterns = allowedOriginPatterns.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .map(s -> s.replaceAll("^[\"']+|[\"']+$", ""))
+                    .filter(s -> !s.isBlank())
+                    .toList();
+            configuration.setAllowedOriginPatterns(cleanPatterns);
+        }
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("*"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "X-Idempotency-Key", "Accept", "Origin"));
+        configuration.setExposedHeaders(List.of("X-Idempotency-Key"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

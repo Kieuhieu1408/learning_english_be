@@ -256,11 +256,18 @@ public class UserService {
         // Opportunistic cleanup of expired rows
         refreshTokenRepository.deleteExpired(Instant.now());
 
+        String role = (principal.getAuthorities() != null && !principal.getAuthorities().isEmpty())
+                ? principal.getAuthorities().iterator().next().getAuthority()
+                : "ROLE_USER";
+
         return AuthResponse.builder()
                 .accessToken(tokenProvider.generateAccessToken(principal))
                 .refreshToken(refreshToken)
                 .tokenType("Bearer")
                 .expiresIn(tokenProvider.getAccessExpirationSeconds())
+                .userId(principal.getId())
+                .username(principal.getUsername())
+                .role(role)
                 .build();
     }
 

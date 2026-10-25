@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -198,16 +200,17 @@ public class AiSettingsService {
                         .build();
 
             } else {
+                String safeEndpoint = isGemini ? "https://generativelanguage.googleapis.com/v1beta/models" : customBaseUrl;
                 return AiConnectionTestResponse.builder()
                         .connected(false)
-                        .message("Gateway returned HTTP " + response.statusCode() + " from " + endpoint)
+                        .message("Gateway returned HTTP " + response.statusCode() + " from " + safeEndpoint)
                         .models(getDefaultModels())
                         .build();
             }
         } catch (Exception e) {
             return AiConnectionTestResponse.builder()
                     .connected(false)
-                    .message("Cannot connect to " + provider + " at " + customBaseUrl + ": " + e.getMessage())
+                    .message("Connection failed to " + provider + " gateway. Please check your network and gateway settings.")
                     .models(getDefaultModels())
                     .build();
         }
@@ -231,17 +234,88 @@ public class AiSettingsService {
     }
 
     public void validateBaseUrlAllowList(String customBaseUrl) {
-        String normalized = customBaseUrl.trim().toLowerCase(Locale.ROOT);
-        boolean allowed = DEFAULT_ALLOWED_BASE_URLS.stream()
-                .anyMatch(prefix -> normalized.startsWith(prefix.toLowerCase(Locale.ROOT)));
-        if (!allowed && configuredAllowedUrls != null) {
-            allowed = configuredAllowedUrls.stream()
-                    .filter(u -> u != null && !u.isBlank())
-                    .anyMatch(prefix -> normalized.startsWith(prefix.trim().toLowerCase(Locale.ROOT)));
+        if (customBaseUrl == null || customBaseUrl.isBlank()) {
+            throw new IllegalArgumentException("customBaseUrl cannot be null or empty");
         }
+
+        URI uri;
+        try {
+            uri = URI.create(customBaseUrl.trim());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid customBaseUrl URI syntax: " + e.getMessage());
+        }
+
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+            throw new IllegalArgumentException("Only HTTP and HTTPS protocols are allowed in customBaseUrl");
+        }
+
+        // Prevent User-Info credential parser confusion (e.g. https://api.openai.com@attacker.com)
+        if (uri.getUserInfo() != null) {
+            throw new IllegalArgumentException("User-info credentials are not permitted in customBaseUrl");
+        }
+
+        String targetHost = uri.getHost();
+        if (targetHost == null || targetHost.isBlank()) {
+            throw new IllegalArgumentException("Host cannot be empty in customBaseUrl");
+        }
+        targetHost = targetHost.toLowerCase(Locale.ROOT);
+        int targetPort = uri.getPort();
+
+        boolean allowed = isAllowedUrl(scheme.toLowerCase(Locale.ROOT), targetHost, targetPort);
         if (!allowed) {
             throw new IllegalArgumentException("customBaseUrl is not allowed by SSRF security policy: " + customBaseUrl);
         }
+    }
+
+    private boolean isAllowedUrl(String targetScheme, String targetHost, int targetPort) {
+        List<String> allAllowed = new ArrayList<>(DEFAULT_ALLOWED_BASE_URLS);
+        if (configuredAllowedUrls != null) {
+            allAllowed.addAll(configuredAllowedUrls);
+        }
+
+        for (String allowedStr : allAllowed) {
+            if (allowedStr == null || allowedStr.isBlank()) {
+                continue;
+            }
+            try {
+                URI allowedUri = URI.create(allowedStr.trim());
+                String allowedScheme = allowedUri.getScheme();
+                String allowedHost = allowedUri.getHost();
+                int allowedPort = allowedUri.getPort();
+
+                if (allowedHost == null) {
+                    continue;
+                }
+
+                if (allowedScheme != null && !allowedScheme.equalsIgnoreCase(targetScheme)) {
+                    continue;
+                }
+
+                if (!allowedHost.equalsIgnoreCase(targetHost)) {
+                    continue;
+                }
+
+                // If allowedUri specified a port, target must match that port
+                if (allowedPort != -1) {
+                    if (targetPort != allowedPort) {
+                        continue;
+                    }
+                } else {
+                    // Default ports: target port must be -1 or standard default port for scheme
+                    if (targetPort != -1) {
+                        int defaultPort = "https".equalsIgnoreCase(targetScheme) ? 443 : 80;
+                        if (targetPort != defaultPort) {
+                            continue;
+                        }
+                    }
+                }
+
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+        return false;
     }
 
     public String getDecryptedApiKey(UUID userId) {
@@ -267,16 +341,7 @@ public class AiSettingsService {
             }
         }
         boolean hasKey = decrypted != null && !decrypted.isBlank();
-        String hint = null;
-        if (hasKey) {
-            if (decrypted.length() <= 6) {
-                hint = "***";
-            } else {
-                String prefix = decrypted.substring(0, Math.min(3, decrypted.length()));
-                String suffix = decrypted.substring(decrypted.length() - 4);
-                hint = prefix + "..." + suffix;
-            }
-        }
+        String hint = hasKey ? "••••••••••••" : null;
 
         return AiSettingsDto.builder()
                 .provider(settings.getProvider() != null ? settings.getProvider() : "9ROUTER")
