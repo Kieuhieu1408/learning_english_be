@@ -36,22 +36,16 @@
     "timezone": "Asia/Ho_Chi_Minh"
   }
   ```
-* **Response `200 OK`**:
+* **Response `200 OK`**: Chỉ trả về token; thông tin người dùng lấy qua `GET /api/auth/me`.
   ```json
   {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "tokenType": "Bearer",
-    "userId": "019277f0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-    "username": "kieuhieu",
-    "role": "ROLE_USER",
-    "user": {
-      "username": "kieuhieu",
-      "name": "Hieu Kieu",
-      "email": "hieu@example.com",
-      "role": "ROLE_USER"
-    }
+    "expiresIn": 900
   }
   ```
+  `expiresIn` là thời hạn access token (giây).
 
 ---
 
@@ -67,7 +61,20 @@
 
 ---
 
-### 2.3. `GET /api/auth/me` — Lấy thông tin phiên & Cấu hình Bootstrap
+### 2.3. `POST /api/auth/refresh` — Làm mới token
+* **Request Body**: `{ "refreshToken": "<refresh_token>" }`
+* **Response `200 OK`**: Cùng định dạng với API Login (cặp token mới). Refresh token cũ bị thu hồi ngay (rotation); dùng lại token đã thu hồi sẽ thu hồi toàn bộ phiên của user.
+* **Response `401`**: Refresh token sai, hết hạn hoặc đã bị thu hồi.
+
+---
+
+### 2.4. `POST /api/auth/logout` — Đăng xuất
+* **Request Body**: `{ "refreshToken": "<refresh_token>" }`
+* **Response `204 No Content`**: Refresh token bị thu hồi phía server. Token không hợp lệ bị bỏ qua.
+
+---
+
+### 2.5. `GET /api/auth/me` — Lấy thông tin phiên & Cấu hình Bootstrap
 * **Mô tả**: Được FE gọi khi mở ứng dụng để lấy thông tin người dùng, preferences và bộ đếm tổng quan.
 * **Headers**: `Authorization: Bearer <token>`
 * **Response `200 OK`**:

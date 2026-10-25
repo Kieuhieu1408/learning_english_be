@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS user_app_config (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 7b. Refresh Tokens Table (server-side revocation of refresh JWTs)
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+
 -- 8. User Sync Metadata Table (Counters & Streak)
 CREATE TABLE IF NOT EXISTS user_sync_metadata (
     id UUID PRIMARY KEY,

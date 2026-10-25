@@ -70,8 +70,8 @@ public class ComprehensiveIntegrationTests {
                     .andReturn();
 
             AuthResponse authRes = objectMapper.readValue(result.getResponse().getContentAsString(), AuthResponse.class);
-            assertNotNull(authRes.getToken());
-            jwtToken = "Bearer " + authRes.getToken();
+            assertNotNull(authRes.getAccessToken());
+            jwtToken = "Bearer " + authRes.getAccessToken();
         }
     }
 
@@ -503,12 +503,12 @@ public class ComprehensiveIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reqUser1)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.role").value("ROLE_USER"))
                 .andReturn();
 
         AuthResponse authUser1 = objectMapper.readValue(resUser1.getResponse().getContentAsString(), AuthResponse.class);
-        String tokenUser1 = "Bearer " + authUser1.getToken();
+        String tokenUser1 = "Bearer " + authUser1.getAccessToken();
 
         // 1b. User1 /api/auth/me check
         mockMvc.perform(get("/api/auth/me")
@@ -525,7 +525,7 @@ public class ComprehensiveIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reqUser1Lower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty());
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
 
         // 2. user2 login with exact username "user2" and password "user 2"
         LoginRequest reqUser2Space = new LoginRequest("user2", "user 2");
@@ -533,12 +533,12 @@ public class ComprehensiveIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reqUser2Space)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.role").value("ROLE_USER"))
                 .andReturn();
 
         AuthResponse authUser2 = objectMapper.readValue(resUser2.getResponse().getContentAsString(), AuthResponse.class);
-        String tokenUser2 = "Bearer " + authUser2.getToken();
+        String tokenUser2 = "Bearer " + authUser2.getAccessToken();
 
         // 2b. user2 /api/auth/me check
         mockMvc.perform(get("/api/auth/me")
@@ -555,7 +555,7 @@ public class ComprehensiveIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reqUser2NoSpace)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty());
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
 
         // 2d. user2 case-insensitive username login with "User2"
         LoginRequest reqUser2Capital = new LoginRequest("User2", "user 2");
@@ -563,6 +563,6 @@ public class ComprehensiveIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reqUser2Capital)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty());
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
 }

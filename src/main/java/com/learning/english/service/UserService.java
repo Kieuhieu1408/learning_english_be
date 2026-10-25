@@ -5,12 +5,14 @@ import com.learning.english.constant.Role;
 import com.learning.english.dto.*;
 import com.learning.english.model.*;
 import com.learning.english.repository.*;
+import com.learning.english.security.CustomUserDetailsService;
 import com.learning.english.security.JwtTokenProvider;
 import com.learning.english.security.SecurityContextUtils;
 import com.learning.english.security.UserPrincipal;
 import com.learning.english.util.TimezoneUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -52,6 +54,12 @@ public class UserService {
 
     @Autowired
     private JwtTokenProvider tokenProvider;
+
+    @Autowired
+    private CustomUserDetailsService customUserDetailsService;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -189,7 +197,7 @@ public class UserService {
                 new UsernamePasswordAuthenticationToken(username, password)
         );
 
-        String jwt = tokenProvider.generateToken(authentication);
+        UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         User user = userRepository.findByUsernameIgnoreCase(username)
                 .or(() -> userRepository.findByUsername(username))
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
@@ -197,19 +205,62 @@ public class UserService {
         // Trigger background pre-warming of 45 due words in Caffeine cache
         slidingWordWindow.preWarmAsync(user.getId());
 
+        return buildAuthResponse(principal);
+    }
+
+    @Transactional
+    public AuthResponse refresh(RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken();
+        if (!tokenProvider.validateRefreshToken(refreshToken)) {
+            throw new BadCredentialsException("Invalid or expired refresh token");
+        }
+        RefreshToken stored = refreshTokenRepository.findById(tokenProvider.getTokenIdFromJWT(refreshToken))
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
+
+        if (stored.isRevoked()) {
+            // A rotated/revoked token was replayed: assume it leaked and kill every session of this user.
+            refreshTokenRepository.revokeAllByUserId(stored.getUserId());
+            throw new BadCredentialsException("Refresh token has been revoked");
+        }
+
+        // Rotation: the used token can never be exchanged again.
+        stored.setRevoked(true);
+        refreshTokenRepository.save(stored);
+
+        String username = tokenProvider.getUsernameFromJWT(refreshToken);
+        UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(username);
+        return buildAuthResponse(principal);
+    }
+
+    /** Revokes the given refresh token. Silently ignores unknown or invalid tokens. */
+    @Transactional
+    public void logout(RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken();
+        if (!tokenProvider.validateRefreshToken(refreshToken)) {
+            return;
+        }
+        refreshTokenRepository.findById(tokenProvider.getTokenIdFromJWT(refreshToken)).ifPresent(t -> {
+            t.setRevoked(true);
+            refreshTokenRepository.save(t);
+        });
+    }
+
+    private AuthResponse buildAuthResponse(UserPrincipal principal) {
+        UUID tokenId = UUID.randomUUID();
+        String refreshToken = tokenProvider.generateRefreshToken(principal, tokenId);
+        refreshTokenRepository.save(RefreshToken.builder()
+                .id(tokenId)
+                .userId(principal.getId())
+                .expiresAt(Instant.now().plusMillis(tokenProvider.getRefreshExpirationMs()))
+                .build());
+        // Opportunistic cleanup of expired rows
+        refreshTokenRepository.deleteExpired(Instant.now());
+
         return AuthResponse.builder()
-                .token(jwt)
+                .accessToken(tokenProvider.generateAccessToken(principal))
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
-                .userId(user.getId())
-                .username(user.getUsername())
-                .email(user.getEmail())
-                .role(user.getRole().name())
-                .user(AuthResponse.UserInfoDto.builder()
-                        .username(user.getUsername())
-                        .name(user.getName() != null ? user.getName() : user.getUsername())
-                        .email(user.getEmail())
-                        .role(user.getRole().name())
-                        .build())
+                .expiresIn(tokenProvider.getAccessExpirationSeconds())
                 .build();
     }
 
